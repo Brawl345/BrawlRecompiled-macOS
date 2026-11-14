@@ -69,6 +69,14 @@ inline std::string GameSaveKey() {
     std::vector<std::pair<std::string, uint64_t>> files;
     for (std::filesystem::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
         std::error_code fileError;
+        const auto& name = it->path().filename().native();
+        if (!name.empty() && name.front() == '.') {
+            // Finder writes .DS_Store into folders it opens, which would move the saves elsewhere.
+            if (it->is_directory(fileError)) {
+                it.disable_recursion_pending();
+            }
+            continue;
+        }
         if (it->is_regular_file(fileError)) {
             const auto relative = std::filesystem::relative(it->path(), root, fileError).generic_u8string();
             files.emplace_back(std::string(relative.begin(), relative.end()), it->file_size(fileError));
