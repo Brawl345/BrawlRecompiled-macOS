@@ -14,6 +14,7 @@
 #include <array>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace std::string_view_literals;
 
@@ -256,64 +257,45 @@ IdentityMatch identity_match(const ControllerIdentity& saved, const ControllerId
 }
 
 void assign_player_index(GameController& controller, int32_t port) {
-  SDL_SetGamepadPlayerIndex(controller.m_controller, port);
+  if (SDL_GetGamepadPlayerIndex(controller.m_controller) != port) {
+    SDL_SetGamepadPlayerIndex(controller.m_controller, port);
+  }
   controller.m_playerIndex = port;
-}
-
-// SDL forgets the index for devices mapped after connect, so player_index() falls
-// back to the cached copy; both have to move together or a port looks doubly taken.
-int32_t effective_player_index(const GameController& controller) {
-  const int32_t player = SDL_GetGamepadPlayerIndex(controller.m_controller);
-  return player >= 0 ? player : controller.m_playerIndex;
-}
-
-bool is_instance_claimed(const std::array<Uint32, PAD_MAX_CONTROLLERS>& claimedControllers, size_t claimedCount,
-                         Uint32 instance) {
-  return std::find(claimedControllers.begin(), claimedControllers.begin() + claimedCount, instance) !=
-         claimedControllers.begin() + claimedCount;
 }
 
 void apply_port_preferences() noexcept {
   ensure_port_preferences_loaded();
-  if (!std::any_of(g_portPreferences.begin(), g_portPreferences.end(),
-                   [](const auto& preference) { return preference.state != PortPreferenceState::Unset; })) {
-    return;
-  }
-
+  std::vector<GameController*> controllers;
+  controllers.reserve(g_GameControllers.size());
   for (auto& [instance, controller] : g_GameControllers) {
-    const int32_t player = effective_player_index(controller);
-    if (player >= 0 && player < PAD_MAX_CONTROLLERS && g_portPreferences[player].state != PortPreferenceState::Unset) {
-      // Keep SDL's default player assignment from taking explicitly configured ports
-      assign_player_index(controller, -1);
-    }
+    controllers.push_back(&controller);
   }
+  std::sort(controllers.begin(), controllers.end(),
+            [](const auto* left, const auto* right) { return left->m_index < right->m_index; });
 
-  std::array<Uint32, PAD_MAX_CONTROLLERS> claimedControllers{};
-  size_t claimedCount = 0;
+  std::array<GameController*, PAD_MAX_CONTROLLERS> assignments{};
+  const auto claimed = [&](const auto* controller) {
+    return std::find(assignments.begin(), assignments.end(), controller) != assignments.end();
+  };
   for (uint32_t port = 0; port < g_portPreferences.size(); ++port) {
     const auto& preference = g_portPreferences[port];
     if (preference.state != PortPreferenceState::Controller) {
       continue;
     }
 
-    Uint32 fallbackInstance = 0;
     GameController* fallbackController = nullptr;
-    for (auto& [instance, controller] : g_GameControllers) {
-      if (is_instance_claimed(claimedControllers, claimedCount, instance)) {
+    for (auto* controller : controllers) {
+      if (claimed(controller)) {
         continue;
       }
 
-      switch (identity_match(preference.identity, controller_identity(controller))) {
+      switch (identity_match(preference.identity, controller_identity(*controller))) {
       case IdentityMatch::Exact:
-        assign_player_index(controller, static_cast<int32_t>(port));
-        claimedControllers[claimedCount++] = instance;
-        fallbackController = nullptr;
+        assignments[port] = controller;
         break;
       case IdentityMatch::Fallback:
-        // Prefer any later exact match before claiming a fallback candidate
         if (fallbackController == nullptr) {
-          fallbackInstance = instance;
-          fallbackController = &controller;
+          fallbackController = controller;
         }
         continue;
       case IdentityMatch::None:
@@ -321,47 +303,41 @@ void apply_port_preferences() noexcept {
       }
       break;
     }
+    if (assignments[port] == nullptr) {
+      assignments[port] = fallbackController;
+    }
+  }
 
-    if (fallbackController != nullptr) {
-      assign_player_index(*fallbackController, static_cast<int32_t>(port));
-      claimedControllers[claimedCount++] = fallbackInstance;
+  for (auto* controller : controllers) {
+    if (claimed(controller)) {
+      continue;
+    }
+    for (size_t port = 0; port < assignments.size(); ++port) {
+      if (assignments[port] == nullptr && g_portPreferences[port].state != PortPreferenceState::None) {
+        assignments[port] = controller;
+        break;
+      }
+    }
+  }
+
+  // SDL relocates a port's previous occupant, so release moving devices before assigning their destinations.
+  for (auto* controller : controllers) {
+    const auto destination = std::find(assignments.begin(), assignments.end(), controller);
+    const int32_t port =
+        destination == assignments.end() ? -1 : static_cast<int32_t>(destination - assignments.begin());
+    if (SDL_GetGamepadPlayerIndex(controller->m_controller) != port) {
+      assign_player_index(*controller, -1);
+    } else {
+      controller->m_playerIndex = port;
+    }
+  }
+  for (size_t port = 0; port < assignments.size(); ++port) {
+    if (assignments[port] != nullptr) {
+      assign_player_index(*assignments[port], static_cast<int32_t>(port));
     }
   }
 }
 
-// SDL only hands out a player index when the device already had a gamepad mapping
-// at connect time, so anything mapped later (the setup wizard) stays at -1.
-void ensure_player_index(GameController& controller) noexcept {
-  const int32_t player = SDL_GetGamepadPlayerIndex(controller.m_controller);
-  if (player >= 0) {
-    controller.m_playerIndex = player;
-    return;
-  }
-  if (controller.m_playerIndex >= 0) {
-    return;
-  }
-  ensure_port_preferences_loaded();
-  const auto claim = [&](bool skipConfiguredPorts) {
-    for (int32_t port = 0; port < PAD_MAX_CONTROLLERS; ++port) {
-      if (skipConfiguredPorts && g_portPreferences[port].state != PortPreferenceState::Unset) {
-        continue;
-      }
-      const bool taken = std::any_of(g_GameControllers.begin(), g_GameControllers.end(), [&](const auto& entry) {
-        return entry.second.m_controller != controller.m_controller && effective_player_index(entry.second) == port;
-      });
-      if (!taken) {
-        assign_player_index(controller, port);
-        return true;
-      }
-    }
-    return false;
-  };
-  // Explicitly configured ports are only used as a last resort so a hot-plugged
-  // controller cannot steal the port its preferred device will claim.
-  if (!claim(true)) {
-    claim(false);
-  }
-}
 } // namespace
 
 GameController* get_controller_for_player(uint32_t player) noexcept {
@@ -412,7 +388,6 @@ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
     controller.m_hasRgbLed = SDL_GetBooleanProperty(props, SDL_PROP_GAMEPAD_CAP_RGB_LED_BOOLEAN, false);
     SDL_JoystickID instance = SDL_GetJoystickID(SDL_GetGamepadJoystick(ctrl));
     g_GameControllers[instance] = controller;
-    ensure_player_index(g_GameControllers[instance]);
     apply_port_preferences();
 #if defined(SDL_PLATFORM_MACOS)
     // First-use convenience only: never override a saved assignment or None.
@@ -451,7 +426,6 @@ bool refresh_controller(SDL_JoystickID instance) noexcept {
   // The SDL mapping changed underneath us; drop the cached PAD bindings so they
   // are rebuilt from the new one.
   it->second.m_mappingLoaded = false;
-  ensure_player_index(it->second);
   apply_port_preferences();
   return true;
 }
@@ -481,8 +455,7 @@ int32_t player_index(Uint32 instance) noexcept {
 
 void set_player_index(Uint32 instance, Sint32 index) noexcept {
   if (auto it = g_GameControllers.find(instance); it != g_GameControllers.end()) {
-    SDL_SetGamepadPlayerIndex(it->second.m_controller, index);
-    it->second.m_playerIndex = index;
+    assign_player_index(it->second, index);
   }
 }
 
