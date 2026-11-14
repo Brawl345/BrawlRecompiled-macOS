@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 
 extern "C" uint8_t* aurora_load_png_rgba(const char* path, uint32_t* width, uint32_t* height);
@@ -42,6 +43,35 @@ struct Nav {
     bool up = false, down = false, left = false, right = false, confirm = false, back = false;
 };
 
+inline bool NativeHeld(SDL_Gamepad* pad, u32 binding) {
+    if (PADIsAxisButton(binding)) {
+        const u32 axis = PADAxisButtonAxis(binding);
+        if (axis >= SDL_GAMEPAD_AXIS_COUNT) return false;
+        int value = SDL_GetGamepadAxis(pad, static_cast<SDL_GamepadAxis>(axis));
+        if (PADAxisButtonNegative(binding)) value = -value;
+        return value > 0 && value * 100 >= static_cast<int>(PADAxisButtonThreshold(binding)) * 32767;
+    }
+    return binding < SDL_GAMEPAD_BUTTON_COUNT && SDL_GetGamepadButton(pad, static_cast<SDL_GamepadButton>(binding));
+}
+
+// The GameCube buttons a pad holds through its own mapping; a pad on no port has no mapping.
+inline std::optional<uint16_t> MappedButtons(u32 index, SDL_Gamepad* pad) {
+    for (u32 port = 0; port < PAD_CHANMAX; ++port) {
+        if (PADGetIndexForPort(port) != static_cast<s32>(index)) continue;
+        uint16_t buttons = 0;
+        const auto scan = [&](const PADButtonMapping* mappings, u32 count) {
+            for (u32 i = 0; mappings != nullptr && i < count; ++i)
+                if (NativeHeld(pad, mappings[i].nativeButton)) buttons |= mappings[i].padButton;
+        };
+        u32 count = 0;
+        scan(PADGetButtonMappings(port, &count), count);
+        count = 0;
+        scan(PADGetAltButtonMappings(port, &count), count);
+        return buttons;
+    }
+    return std::nullopt;
+}
+
 inline Nav ReadNav(bool typing = false) {
     static uint32_t prevHeld = 0;
     static double nextRepeat = 0.0;
@@ -51,12 +81,25 @@ inline Nav ReadNav(bool typing = false) {
     for (u32 i = 0; i < 8 && SDL_GetKeyboardFocus() != nullptr; ++i) {
         SDL_Gamepad* pad = PADGetSDLGamepadForIndex(i);
         if (pad == nullptr) continue;
-        auto b = [&](SDL_GamepadButton button) { return SDL_GetGamepadButton(pad, button); };
         const int lx = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX), ly = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY);
-        if (b(SDL_GAMEPAD_BUTTON_DPAD_UP) || ly < -20000) held |= kUp;
-        if (b(SDL_GAMEPAD_BUTTON_DPAD_DOWN) || ly > 20000) held |= kDown;
-        if (b(SDL_GAMEPAD_BUTTON_DPAD_LEFT) || lx < -20000) held |= kLeft;
-        if (b(SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || lx > 20000) held |= kRight;
+        if (ly < -20000) held |= kUp;
+        if (ly > 20000) held |= kDown;
+        if (lx < -20000) held |= kLeft;
+        if (lx > 20000) held |= kRight;
+        if (const auto gc = MappedButtons(i, pad)) {
+            if (*gc & PAD_BUTTON_UP) held |= kUp;
+            if (*gc & PAD_BUTTON_DOWN) held |= kDown;
+            if (*gc & PAD_BUTTON_LEFT) held |= kLeft;
+            if (*gc & PAD_BUTTON_RIGHT) held |= kRight;
+            if (*gc & (PAD_BUTTON_A | PAD_BUTTON_START)) held |= kA;
+            if (*gc & PAD_BUTTON_B) held |= kB;
+            continue;
+        }
+        auto b = [&](SDL_GamepadButton button) { return SDL_GetGamepadButton(pad, button); };
+        if (b(SDL_GAMEPAD_BUTTON_DPAD_UP)) held |= kUp;
+        if (b(SDL_GAMEPAD_BUTTON_DPAD_DOWN)) held |= kDown;
+        if (b(SDL_GAMEPAD_BUTTON_DPAD_LEFT)) held |= kLeft;
+        if (b(SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) held |= kRight;
         if (b(SDL_GAMEPAD_BUTTON_SOUTH) || b(SDL_GAMEPAD_BUTTON_START)) held |= kA;
         if (b(SDL_GAMEPAD_BUTTON_EAST)) held |= kB;
     }
