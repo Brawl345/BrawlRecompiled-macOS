@@ -499,7 +499,9 @@ void DrawOptionsMenu() {
         c.list->AddRectFilledMultiColor(vp->Pos, ImVec2(vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y), IM_COL32(10, 12, 26, 225),
                                         IM_COL32(10, 12, 26, 225), IM_COL32(34, 12, 8, 235), IM_COL32(34, 12, 8, 235));
         const bool capturing = g_rebind.active;
-        const MK::Nav nav = capturing ? MK::Nav{} : MK::ReadNav();
+        // Read every frame, also while capturing, so the button just bound is not a fresh press once capture ends.
+        const MK::Nav read = MK::ReadNav();
+        const MK::Nav nav = capturing ? MK::Nav{} : read;
 
         // Banner.
         MK::Plate(c, -470, 176, 40, 222, 0x14182AFFu, 16.0f);
