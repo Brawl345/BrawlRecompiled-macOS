@@ -108,13 +108,13 @@ std::string Problem(const fs::path& root) {
     const int revision = static_cast<unsigned char>(header[7]);
     // projects/spm/pal/tools/make_pal_runtime.py rewrites these two for the PAL engine (R8PP01, any revision).
     constexpr const char* kGameId = "RSBE01";
-    constexpr int kRevision = 1;
+    constexpr int kRevision = MKW_BRAWL_DISC_REVISION;
     if (id != kGameId) {
         return "That is " + id + ", not Super Smash Bros. Brawl " + kGameId + ". This engine runs only that disc.";
     }
     if (kRevision >= 0 && revision != kRevision) {
-        return "That is Super Smash Bros. Brawl revision " + std::to_string(revision) +
-               ". This port runs only revision 0 (Dolphin shows it under Properties > Info).";
+        return "That is Super Smash Bros. Brawl revision " + std::to_string(revision) + ". This engine requires revision " +
+               std::to_string(kRevision) + " (Dolphin shows it under Properties > Info).";
     }
     return {};
 }
@@ -132,6 +132,11 @@ bool EnsureConfigured() {
         }
         RT_LOGF(RT_TAG_RUNTIME, "game folder: %s\n", RuntimeConfigFile::PathToUtf8(beside).c_str());
         return true;
+    }
+#endif
+#if defined(__APPLE__)
+    if (RuntimeConfigFile::DvdRoot().empty()) {
+        RuntimeConfigFile::UseDvdRootForThisRun(RuntimeConfigFile::ResolveRelativeToConfig("Disc"));
     }
 #endif
     const fs::path configured = Find(RuntimeConfigFile::ResolvedDvdRoot());

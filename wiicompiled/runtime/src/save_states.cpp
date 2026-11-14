@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <csetjmp>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -49,9 +50,23 @@ constexpr size_t kBelow = 512;        // bytes kept below a thread's resume poin
 
 // Where each fiber resumes: written by SwitchFiber, read back when the fiber runs again.
 struct FiberSlot {
+#if defined(__aarch64__)
+    std::jmp_buf jmp{};
+    char* stackPointer = nullptr;  // jmp_buf is opaque on arm64
+#else
     void* jmp[5] = {};
+#endif
     char* top = nullptr;
 };
+
+char* StackPointer(const FiberSlot& slot) {
+#if defined(__aarch64__)
+    return slot.stackPointer;
+#else
+    return static_cast<char*>(slot.jmp[2]);  // __builtin_setjmp keeps the stack pointer in [2]
+#endif
+}
+
 std::unordered_map<void*, FiberSlot> g_fibers;  // only touched on the game's host thread
 
 struct StackCopy {
@@ -132,11 +147,11 @@ void TakeSnapshot(Snapshot& s) {
     }
     s.stacks.clear();
     for (const auto& [fiber, slot] : g_fibers) {
-        if (slot.top == nullptr || slot.jmp[2] == nullptr) continue;  // never ran, or never switched out
+        if (slot.top == nullptr || StackPointer(slot) == nullptr) continue;  // never ran, or never switched out
         StackCopy copy;
         copy.fiber = fiber;
         copy.slot = slot;
-        copy.from = static_cast<char*>(slot.jmp[2]) - kBelow;  // __builtin_setjmp keeps the stack pointer in [2]
+        copy.from = StackPointer(slot) - kBelow;
         copy.bytes.assign(copy.from, slot.top);
         s.stacks.push_back(std::move(copy));
     }
@@ -189,7 +204,7 @@ std::string LoadProblem(const Snapshot& s) {
     if (!s.valid) return "That slot is empty.";
     uint32_t current = 0;
     const auto threads = Fiber::GuestFiberManager::CopyFibers(current);
-    const size_t live = std::count_if(g_fibers.begin(), g_fibers.end(), [](const auto& f) { return f.second.top && f.second.jmp[2]; });
+    const size_t live = std::count_if(g_fibers.begin(), g_fibers.end(), [](const auto& f) { return f.second.top && StackPointer(f.second); });
     bool same = threads.size() == s.threads.size() && s.stacks.size() == live;
     for (const auto& [thread, fiber] : threads) {
         const auto it = std::find_if(s.threads.begin(), s.threads.end(), [&](const auto& t) { return t.first == thread; });
@@ -204,11 +219,15 @@ std::string LoadProblem(const Snapshot& s) {
 
 [[gnu::noinline]] void ResumeSaved(void* fiber) {
     FiberSlot& slot = g_fibers[fiber];
-    if (slot.jmp[1] == nullptr) {
+    if (StackPointer(slot) == nullptr) {
         RT_LOGF(RT_TAG_RUNTIME, "[savestate] fiber %p resumed with no saved point (%zu fibers)\n", fiber, g_fibers.size());
         std::abort();
     }
+#if defined(__aarch64__)
+    std::longjmp(slot.jmp, 1);
+#else
     __builtin_longjmp(slot.jmp, 1);
+#endif
 }
 
 } // namespace
@@ -243,13 +262,20 @@ void MarkStackTop(void* top) { g_fibers[HostContext::Current()].top = static_cas
 [[gnu::noinline]] void SwitchBelow(void* target) {
     volatile char pad[kPad];  // a fixed frame: a dynamic alloca would need a base pointer longjmp doesn't restore
     pad[0] = 0;
+    asm volatile("" : : "r"(pad) : "memory");  // keeps Clang from shrinking the frame to the one byte it writes
     HostContext::Switch(target);
     ResumeSaved(HostContext::Current());
 }
 
 [[gnu::noinline]] void SwitchFiber(void* target) {
-    void** jmp = g_fibers[HostContext::Current()].jmp;
+    FiberSlot& slot = g_fibers[HostContext::Current()];
+#if defined(__aarch64__)
+    asm volatile("mov %0, sp" : "=r"(slot.stackPointer));
+    if (setjmp(slot.jmp) == 0) {
+#else
+    void** jmp = slot.jmp;
     if (__builtin_setjmp(jmp) == 0) {
+#endif
 #if defined(__x86_64__) && defined(_WIN32)
         // Win64: the frame address __builtin_setjmp keeps is rbp minus the SEH frame offset, but the resume path reloads
         // xmm6-15 relative to rbp, so it read them from below this frame and every resumed thread lost them (the

@@ -74,6 +74,7 @@ uint8_t* HostPointer(uint32_t a) { for (const auto& m : g_mappings) if (a >= m.b
 void ProtectDeferredRange(uint32_t, size_t) {}
 void UnprotectDeferredRange(uint32_t, size_t) {}
 void RegisterExecutableRange(uint32_t, uint32_t) {}
+void ReprotectExecutablePage(uint32_t) {}
 FaultCounters Counters() { return {}; }
 void LogFaultSummary() noexcept {}
 bool HandleAccessViolation(void*, bool) noexcept { return false; }

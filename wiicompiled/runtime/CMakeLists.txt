@@ -60,7 +60,11 @@ option(MKW_BUILD_PSQ_TESTS "Build focused PSQ ISA tests" OFF)
 # so every target created afterwards (mkw_runtime_common, the translated shard
 # libraries and the products in cmake/PublicProducts.cmake) inherits them while
 # aurora-main and its third-party tree stay unaffected.
-set(MKW_PROJECT_COMPILE_DEFINITIONS NOMINMAX)
+set(MKW_BRAWL_DISC_REVISION 1 CACHE STRING "Brawl disc revision used for translation")
+if(NOT MKW_BRAWL_DISC_REVISION MATCHES "^[12]$")
+    message(FATAL_ERROR "MKW_BRAWL_DISC_REVISION must be 1 or 2")
+endif()
+set(MKW_PROJECT_COMPILE_DEFINITIONS NOMINMAX MKW_BRAWL_DISC_REVISION=${MKW_BRAWL_DISC_REVISION})
 
 set(CMAKE_CXX_STANDARD 17)
 

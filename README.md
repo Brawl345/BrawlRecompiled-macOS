@@ -2,7 +2,7 @@
 
 A native PC port of **Super Smash Bros. Brawl** (Wii, 2008), made by statically recompiling the game's PowerPC code
 (main.dol and all 126 `.rel` modules) to C++ with [WiiCompiled](https://github.com/patchzyy/Wiicompiled). No
-emulator: the game runs as a Windows program.
+emulator: the game runs as a native program.
 
 ![Donkey Kong vs the Ice Climbers on Castle Siege, rendered at 4K](screenshots/05_castle_siege.jpg)
 
@@ -43,7 +43,8 @@ Rendered at 4K (shown here at 1080p).
 - A virtual SD card (`UserData\SD`), so the game's own SD features and SD-based mods work
 - Gecko codes and Project+-style mods (see below)
 - Online play between Brawl Recompiled players (see below)
-- Windows (with a build for processors without AVX2) and Linux / Steam Deck
+- Windows (with a build for processors without AVX2), Linux / Steam Deck and macOS on Apple Silicon (build from
+  source)
 
 **No game data is included**: the game's files are read from your own copy of the game.
 
@@ -123,6 +124,27 @@ powershell -ExecutionPolicy Bypass -File tools\build-brawl.ps1 -SkipTools
 The release (`Brawl Recompiled.exe` plus a hidden `engine\` folder) is made by `tools\build-launcher.ps1` (the
 launcher, Windows and Linux, with a portable .NET SDK) and `tools\package-brawl.ps1 -Zip`; `tools\build-linux.sh`
 and `tools\package-linux.sh` make the Linux download in WSL from the same translation.
+
+### macOS
+
+The Mac build runs natively on Apple Silicon with Metal (macOS 14.7 or later). It needs a USA revision 2 disc
+(RSBE01), the Xcode Command Line Tools, CMake, Ninja, uv, Git and the .NET 8 SDK (on `PATH`, or in `toolchain/`
+and `toolchain/dotnet/`).
+
+```bash
+bash tools/build-macos.sh --game "/path/to/Super Smash Bros. Brawl.iso"
+uv run tools/package-macos.py
+open "dist/Brawl Recompiled.app"
+```
+
+The build extracts the disc to `~/Library/Application Support/BrawlRecompiled/Disc`, checks `main.dol` and every
+module against the Brawl decompilation, then translates and compiles the game. The app reads the disc from there,
+next to `Config.toml`, the saves and the caches. To use an already extracted disc elsewhere, pass
+`--disc-root /path/to/DATA` and set `[paths] dvd_root` in `Config.toml`. `--jobs N` sets the compile jobs (default 6,
+about 32 GB of RAM); `--skip-translate` recompiles only the runtime. Each step logs to `build-logs/`.
+
+`package-macos.py --archive` also writes `dist/BrawlRecompiled-<version>-macos-arm64.zip`. The app is ad-hoc
+signed and not notarized, so macOS asks for confirmation on first launch.
 
 | Folder | What it is |
 |---|---|
