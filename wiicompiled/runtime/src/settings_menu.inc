@@ -176,9 +176,21 @@ void AudioRows(std::vector<MenuRow>& rows) {
 void ControlsRows(std::vector<MenuRow>& rows) {
     const uint32_t port = static_cast<uint32_t>(g_controllerPort);
     const char* name = PADGetName(port);
-    rows.push_back({"Player", "PLAYER " + std::to_string(port + 1),
-                    std::string("Controller on this port: ") + (name != nullptr ? name : "none") + ". Every pad is set up automatically.",
+    const std::string player = "player " + std::to_string(port + 1);
+    rows.push_back({"Player", "PLAYER " + std::to_string(port + 1), "The player whose controller this page sets up.",
                     [](int step) { g_controllerPort = Cycle(g_controllerPort, step, PAD_MAX_CONTROLLERS); }});
+    std::string padName = name != nullptr ? name : "NONE";
+    std::transform(padName.begin(), padName.end(), padName.begin(), [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+    const int padIndex = PADGetIndexForPort(port);
+    const int padCount = static_cast<int>(PADCount());
+    rows.push_back({"Controller", padName,
+                    "The controller " + player + " plays with. Left / right picks another; taking one from another player swaps the two.",
+                    [port, padIndex, padCount](int step) {
+                        // One choice per connected controller, then none.
+                        const int next = Cycle(padIndex >= 0 ? padIndex : padCount, step, padCount + 1);
+                        if (next == padCount) PADClearPort(port);
+                        else PADSetPortForIndex(static_cast<u32>(next), port);
+                    }, padCount > 0});
     rows.push_back({"Vibration", OnOff(g_rumbleEnabled), "Rumble on every controller.", [](int) {
                         g_rumbleEnabled = !g_rumbleEnabled;
                         PAD_HLE_SetRumbleEnabled(g_rumbleEnabled);
@@ -258,8 +270,8 @@ void ControlsRows(std::vector<MenuRow>& rows) {
         std::string value = waiting ? "PRESS A BUTTON..." : NativeButtonForValue(nativeFor(padButton)).label;
         std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
         rows.push_back({std::string("Button: ") + kControllerButtons[i].label, value,
-                        padHere ? "A or Enter, then press the controller button to use for it."
-                                : "Connect a controller for this player to change its buttons.",
+                        padHere ? std::string("A or Enter, then press the button on ") + (name != nullptr ? name : "the controller") + " to use for it."
+                                : "Pick a controller for " + player + " to change its buttons.",
                         [padButton, i](int step) {
                             if (step == 0) BeginRebind(RebindKind::Controller, padButton, kControllerButtons[i].label);
                         }, padHere});
@@ -607,7 +619,9 @@ void DrawOptionsMenu() {
         MK::Plate(c, -470, -232, 470, -200, 0x10131FFFu, 8.0f);
         const bool flashing = ImGui::GetTime() < g_menu.flashUntil && !g_menu.flash.empty();
         if (g_rebind.active) {
-            hint = g_rebind.kind == RebindKind::Controller ? "Press the controller button for " + g_rebind.label + "."
+            const char* pad = PADGetName(g_rebind.port);
+            hint = g_rebind.kind == RebindKind::Controller ? std::string("Press the button on ") + (pad != nullptr ? pad : "the controller") +
+                                                                 " for " + g_rebind.label + "."
                                                            : "Press a key or click a mouse button for " + g_rebind.label + ". Backspace clears it.";
         }
         // Up to two lines under the rows (a cheat's notes can be long).

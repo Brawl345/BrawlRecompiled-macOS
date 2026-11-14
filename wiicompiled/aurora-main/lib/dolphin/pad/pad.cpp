@@ -406,14 +406,22 @@ void PADSetPortForIndex(const u32 idx, const u32 port) {
   }
 
   const int32_t oldPort = aurora::input::player_index(ctrl->m_index);
-  if (const auto* dest = aurora::input::get_controller_for_player(port); dest != nullptr && dest != ctrl) {
-    aurora::input::set_player_index(dest->m_index, -1);
+  const auto* dest = aurora::input::get_controller_for_player(port);
+  if (dest == ctrl) {
+    dest = nullptr;
   }
-  if (oldPort >= 0 && oldPort != port) {
-    aurora::input::persist_controller_for_player(oldPort, nullptr);
+  if (dest != nullptr) {
+    aurora::input::set_player_index(dest->m_index, -1);
   }
   aurora::input::set_player_index(ctrl->m_index, static_cast<Sint32>(port));
   aurora::input::persist_controller_for_player(port, ctrl);
+  if (oldPort >= 0 && oldPort != static_cast<int32_t>(port)) {
+    // The pad that had the port moves to the one just left, so both keep playing.
+    if (dest != nullptr) {
+      aurora::input::set_player_index(dest->m_index, oldPort);
+    }
+    aurora::input::persist_controller_for_player(oldPort, dest);
+  }
 }
 
 int32_t PADGetIndexForPort(const u32 port) {
