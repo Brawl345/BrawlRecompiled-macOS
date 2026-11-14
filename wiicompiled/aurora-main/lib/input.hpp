@@ -54,6 +54,7 @@ GameController* get_controller_for_player(uint32_t player) noexcept;
 Sint32 get_instance_for_player(uint32_t player) noexcept;
 SDL_JoystickID add_controller(SDL_JoystickID which) noexcept;
 bool refresh_controller(SDL_JoystickID instance) noexcept;
+void refresh_pending_player_leds() noexcept;
 void remove_controller(Uint32 instance) noexcept;
 Sint32 player_index(Uint32 instance) noexcept;
 void set_player_index(Uint32 instance, Sint32 index) noexcept;

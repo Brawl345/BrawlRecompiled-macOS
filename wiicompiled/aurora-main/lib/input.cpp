@@ -372,6 +372,17 @@ void refresh_player_led(SDL_Gamepad* gamepad) {
   }
 }
 
+// GameController applies the duplicate's LED asynchronously, after the HIDAPI pad has set its own; set it again later.
+std::vector<std::pair<SDL_JoystickID, Uint64>> g_ledRefreshes;
+
+void schedule_player_led_refresh(SDL_Gamepad* gamepad) {
+  refresh_player_led(gamepad);
+  const SDL_JoystickID id = SDL_GetGamepadID(gamepad);
+  const Uint64 now = SDL_GetTicks();
+  g_ledRefreshes.emplace_back(id, now + 1000);
+  g_ledRefreshes.emplace_back(id, now + 3000);
+}
+
 } // namespace
 
 GameController* get_controller_for_player(uint32_t player) noexcept {
@@ -414,7 +425,7 @@ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
       if (mfi_duplicates(ctrl, other.m_controller)) {
         Log.info("Ignoring '{}': the same pad as '{}'", SDL_GetGamepadName(ctrl), SDL_GetGamepadName(other.m_controller));
         close_mfi_duplicate(ctrl);
-        refresh_player_led(other.m_controller);
+        schedule_player_led_refresh(other.m_controller);
         return -1;
       }
     }
@@ -444,7 +455,7 @@ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
     g_GameControllers[instance] = controller;
     apply_port_preferences();
     if (droppedDuplicate) {
-      refresh_player_led(ctrl);
+      schedule_player_led_refresh(ctrl);
     }
 #if defined(SDL_PLATFORM_MACOS)
     // First-use convenience only: never override a saved assignment or None.
@@ -473,6 +484,22 @@ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
   }
 
   return -1;
+}
+
+void refresh_pending_player_leds() noexcept {
+  if (g_ledRefreshes.empty()) {
+    return;
+  }
+  const Uint64 now = SDL_GetTicks();
+  std::erase_if(g_ledRefreshes, [now](const auto& refresh) {
+    if (now < refresh.second) {
+      return false;
+    }
+    if (const auto it = g_GameControllers.find(refresh.first); it != g_GameControllers.end()) {
+      refresh_player_led(it->second.m_controller);
+    }
+    return true;
+  });
 }
 
 bool refresh_controller(SDL_JoystickID instance) noexcept {

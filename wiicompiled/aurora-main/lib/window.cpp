@@ -389,6 +389,7 @@ const AuroraEvent* poll_events() {
   while (SDL_PollEvent(&event)) {
     process_event(event);
   }
+  input::refresh_pending_player_leds();
   g_events.push_back(AuroraEvent{
       .type = AURORA_NONE,
   });
