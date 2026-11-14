@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <sys/stat.h>
 
 namespace {
@@ -553,13 +554,29 @@ static void sanitize_dead_zones(aurora::input::GameController* controller, const
   deadZones = default_dead_zones(*controller);
 }
 
+static std::string mapping_path(const aurora::input::GameController& controller) {
+  std::string name = fmt::format("{}_{:04X}_{:04X}", aurora::input::controller_name(controller.m_index),
+                                 controller.m_vid, controller.m_pid);
+  if (const char* serial = SDL_GetGamepadSerial(controller.m_controller); serial != nullptr && !controller.m_isGameCube) {
+    std::string id;
+    for (const char* c = serial; *c != '\0'; ++c) {
+      if (std::isalnum(static_cast<unsigned char>(*c))) {
+        id += static_cast<char>(std::tolower(static_cast<unsigned char>(*c)));
+      }
+    }
+    if (!id.empty()) {
+      name += '_' + id;
+    }
+  }
+  return fs_path_to_string(fs_path_from_string(aurora::g_config.userPath) / (name + ".controller"));
+}
+
 void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-reserved-identifier) */ {
   int32_t playerIndex = SDL_GetGamepadPlayerIndex(controller->m_controller);
   if (playerIndex == -1) {
     return;
   }
 
-  const std::filesystem::path basePath = fs_path_from_string(aurora::g_config.userPath);
   if (!controller->m_mappingLoaded) {
     __PADSetDefaultMapping(controller);
     controller->m_axisMapping = g_defaultAxes;
@@ -567,9 +584,7 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
 
   controller->m_mappingLoaded = true;
 
-  const auto path = fs_path_to_string(
-      basePath / fmt::format("{}_{:04X}_{:04X}.controller", PADGetName(playerIndex), controller->m_vid,
-                             controller->m_pid));
+  const auto path = mapping_path(*controller);
   SDL_IOStream* file = SDL_IOFromFile(path.c_str(), "rb");
   if (file == nullptr) {
     return;
@@ -1476,8 +1491,6 @@ void __PADWriteDeadZones(SDL_IOStream* file, // NOLINT(*-reserved-identifier)
 }
 
 void PADSerializeMappings() {
-  const std::filesystem::path basePath = fs_path_from_string(aurora::g_config.userPath);
-
   // Avoid std::views::values here: older Apple libc++ releases implement the
   // C++20 ranges algorithms we use but not this adaptor.
   for (auto& entry : aurora::input::g_GameControllers) {
@@ -1487,10 +1500,8 @@ void PADSerializeMappings() {
     if (!controller.m_mappingLoaded) {
       continue;
     }
-    const auto filePath =
-        basePath / fmt::format("{}_{:04X}_{:04X}.controller", aurora::input::controller_name(controller.m_index),
-                               controller.m_vid, controller.m_pid);
-    std::string filePathStr = fs_path_to_string(filePath);
+    const std::string filePathStr = mapping_path(controller);
+    const std::filesystem::path filePath = fs_path_from_string(filePathStr);
 
     // don't truncate the file if it already exists
     const char* openMode = std::filesystem::exists(filePath) ? "r+b" : "wb";
