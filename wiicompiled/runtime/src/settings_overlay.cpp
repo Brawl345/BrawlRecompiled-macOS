@@ -151,11 +151,7 @@ std::atomic<bool> g_vsync{RuntimeConfigFile::VSync(true)};  // default on: no te
 bool g_metalFxSpatialUpscaling = RuntimeConfigFile::MetalFxSpatialUpscaling(false);
 #endif
 uint32_t g_disabledPostProcessingPaths = RuntimeConfigFile::DisabledPostProcessingPaths(0);
-std::array<int32_t, PAD_MAX_CONTROLLERS> g_configuredControllerIndices = [] {
-    std::array<int32_t, PAD_MAX_CONTROLLERS> indices{};
-    indices.fill(std::numeric_limits<int32_t>::min());
-    return indices;
-}();
+std::array<SDL_JoystickID, PAD_MAX_CONTROLLERS> g_configuredControllers{};
 
 using ControllerNames::kNativeButtons;
 using ControllerNames::NativeButtonItem;
@@ -350,20 +346,19 @@ void SetTopBarVisible(bool visible) {
 void ApplyConfiguredMappings() {
     for (uint32_t port = 0; port < PAD_MAX_CONTROLLERS; ++port) {
         const int32_t controllerIndex = PADGetIndexForPort(port);
-        if (controllerIndex == g_configuredControllerIndices[port]) {
+        SDL_Gamepad* pad = controllerIndex >= 0 ? PADGetSDLGamepadForIndex(static_cast<u32>(controllerIndex)) : nullptr;
+        const SDL_JoystickID instance = pad != nullptr ? SDL_GetGamepadID(pad) : 0;
+        if (instance == g_configuredControllers[port]) {
             continue;
         }
-        g_configuredControllerIndices[port] = controllerIndex;
-        if (controllerIndex < 0) {
+        g_configuredControllers[port] = instance;
+        if (instance == 0) {
             continue;
         }
-        // The [controller] bindings are positional and shared by every port, so
-        // they describe whatever pad the user set them up with (usually an Xbox
-        // layout: a = south). A Wii U Pro Controller has a fixed, known layout
-        // (A on the east position) that aurora already maps by name; applying
-        // the shared bindings on top swaps A/B and X/Y. (Wii Remotes with any
-        // extension never reach the PAD layer: the game reads them through KPAD.)
-        if (WiiRemoteInput::KindForPort(port) == WiiRemoteInput::Kind::WiiUPro) {
+        // The [controller] bindings are shared by every port: they only set up a pad that has no saved mapping of its
+        // own yet. A Wii U Pro Controller keeps the layout aurora gives it by name. (Wii Remotes with any extension never
+        // reach the PAD layer: the game reads them through KPAD.)
+        if (PADHasSavedMapping(port) || WiiRemoteInput::KindForPort(port) == WiiRemoteInput::Kind::WiiUPro) {
             continue;
         }
 
@@ -599,18 +594,6 @@ void CompleteRebind(uint32_t value) {
         }
         if (capture.secondary) PADSetAltButtonMapping(capture.port, {value, capture.target});
         else PADSetButtonMapping(capture.port, {value, capture.target});
-        uint32_t count = 0, altCount = 0;
-        auto* primary = PADGetButtonMappings(capture.port, &count);
-        auto* alternate = PADGetAltButtonMappings(capture.port, &altCount);
-        uint32_t primaryValue = PAD_NATIVE_BUTTON_INVALID, alternateValue = PAD_NATIVE_BUTTON_INVALID;
-        for (uint32_t i = 0; i < count; ++i)
-            if (primary[i].padButton == capture.target) primaryValue = primary[i].nativeButton;
-        for (uint32_t i = 0; i < altCount; ++i)
-            if (alternate[i].padButton == capture.target) alternateValue = alternate[i].nativeButton;
-        std::string config = NativeBindingConfig(primaryValue);
-        if (alternateValue != PAD_NATIVE_BUTTON_INVALID) config += ',' + NativeBindingConfig(alternateValue);
-        for (size_t i = 0; i < kControllerButtons.size(); ++i)
-            if (kControllerButtons[i].padButton == capture.target) RuntimeConfigFile::SetControllerButton(i, config);
     } else if (capture.kind == RebindKind::MuteHotkey) {
         g_muteHotkey = static_cast<int32_t>(value);
         RuntimeConfigFile::SetMuteHotkey(g_muteHotkey);
@@ -877,7 +860,7 @@ void DrawControllerSettings() {
     ImGui::Text("Assigned: %s", currentName != nullptr ? currentName : "None");
     if (ImGui::MenuItem("Unassign controller")) {
         PADClearPort(selectedGamePort);
-        g_configuredControllerIndices.fill(std::numeric_limits<int32_t>::min());
+        g_configuredControllers.fill(0);
     }
     ImGui::Separator();
     controller_mapping_wizard::DrawSetupList();
@@ -894,7 +877,7 @@ void DrawControllerSettings() {
             ImGui::PushID(static_cast<int>(index));
             if (ImGui::MenuItem(name != nullptr ? name : "Unknown controller")) {
                 PADSetPortForIndex(index, selectedGamePort);
-                g_configuredControllerIndices.fill(std::numeric_limits<int32_t>::min());
+                g_configuredControllers.fill(0);
                 ApplyConfiguredMappings();
             }
             ImGui::PopID();
@@ -2014,7 +1997,7 @@ void HandleEvents(const AuroraEvent* events) noexcept {
     }
     for (const AuroraEvent* ev = events; ev->type != AURORA_NONE; ++ev) {
         if (ev->type == AURORA_CONTROLLER_ADDED || ev->type == AURORA_CONTROLLER_REMOVED) {
-            g_configuredControllerIndices.fill(std::numeric_limits<int32_t>::min());
+            g_configuredControllers.fill(0);
         }
         if (ev->type != AURORA_SDL_EVENT) {
             continue;

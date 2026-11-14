@@ -39,6 +39,7 @@ struct GameController {
   uint16_t m_rumbleIntensityLow = 32767;
   uint16_t m_rumbleIntensityHigh = 32767;
   bool m_mappingLoaded = false;
+  bool m_mappingSaved = false;
   constexpr bool operator==(const GameController& other) const {
     return m_controller == other.m_controller && m_index == other.m_index;
   }

@@ -608,6 +608,7 @@ void __PADLoadMapping(aurora::input::GameController* controller) /*  NOLINT(*-re
     SDL_ReadIO(file, &controller->m_rumbleIntensityHigh, sizeof(u16));
   }
   SDL_CloseIO(file);
+  controller->m_mappingSaved = true;
   sanitize_dead_zones(controller, playerIndex);
 
   bool axisCorrupt = false;
@@ -1474,6 +1475,10 @@ void PADSerializeMappings() {
   for (auto& entry : aurora::input::g_GameControllers) {
     auto& controller = entry.second;
     EnsureMappingLoaded(&controller);
+    // A pad on no port has no mapping in memory; writing it would replace its saved file with zeros.
+    if (!controller.m_mappingLoaded) {
+      continue;
+    }
     const auto filePath =
         basePath / fmt::format("{}_{:04X}_{:04X}.controller", aurora::input::controller_name(controller.m_index),
                                controller.m_vid, controller.m_pid);
@@ -1483,7 +1488,7 @@ void PADSerializeMappings() {
     const char* openMode = std::filesystem::exists(filePath) ? "r+b" : "wb";
     SDL_IOStream* file = SDL_IOFromFile(filePathStr.c_str(), openMode);
     if (file == nullptr) {
-      return;
+      continue;
     }
     SDL_SeekIO(file, 0, SDL_IO_SEEK_SET);
 
@@ -1518,9 +1523,19 @@ void PADSerializeMappings() {
       SDL_WriteIO(file, &controller.m_rumbleIntensityHigh, sizeof(u16));
     }
     SDL_CloseIO(file);
+    controller.m_mappingSaved = true;
   }
 
   save_keyboard_bindings();
+}
+
+BOOL PADHasSavedMapping(const u32 port) {
+  auto* controller = aurora::input::get_controller_for_player(port);
+  if (controller == nullptr) {
+    return FALSE;
+  }
+  EnsureMappingLoaded(controller);
+  return controller->m_mappingSaved ? TRUE : FALSE;
 }
 
 PADDeadZones* PADGetDeadZones(const u32 port) {

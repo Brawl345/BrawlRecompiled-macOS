@@ -216,6 +216,7 @@ void PADSetAxisMapping(u32 port, PADAxisMapping mapping);
 void PADSetAllAxisMappings(u32 port, PADAxisMapping axes[PAD_AXIS_COUNT]);
 PADAxisMapping* PADGetAxisMappings(u32 port, u32* axisCount);
 void PADSerializeMappings();
+BOOL PADHasSavedMapping(u32 port);
 
 BOOL PADSetKeyButtonBinding(u32 port, PADKeyButtonBinding binding);
 BOOL PADSetKeyButtonBindings(u32 port, PADKeyButtonBinding bindings[PAD_BUTTON_COUNT]);

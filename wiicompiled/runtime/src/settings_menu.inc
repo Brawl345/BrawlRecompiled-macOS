@@ -248,7 +248,6 @@ void ControlsRows(std::vector<MenuRow>& rows) {
                             if (const NativeButtonItem* native = FindNativeButton(preset[i])) {
                                 PADSetButtonMapping(port, PADButtonMapping{native->nativeButton, kControllerButtons[i].padButton});
                                 PADSetAltButtonMapping(port, PADButtonMapping{PAD_NATIVE_BUTTON_INVALID, kControllerButtons[i].padButton});
-                                RuntimeConfigFile::SetControllerButton(i, preset[i]);
                             }
                         }
                         PADSerializeMappings();
