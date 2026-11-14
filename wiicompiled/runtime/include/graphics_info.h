@@ -33,6 +33,14 @@ inline bool Integrated() {
     return g_integrated;
 }
 
+inline bool RequiresResolutionLimit() {
+#if defined(__APPLE__) && defined(__aarch64__)
+    return false;
+#else
+    return Integrated();
+#endif
+}
+
 inline bool CompatActive() {
     std::lock_guard<std::mutex> lock(g_mutex);
     return g_compatActive;

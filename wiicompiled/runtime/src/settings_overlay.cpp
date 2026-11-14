@@ -262,7 +262,7 @@ int g_noticeFrames = 0;
 // An integrated GPU (a mini PC's Radeon 780M in a player's video) drops well below 60 fps above 1080p: start at
 // 1080p for this session and say so. The saved choice stays, and F10 can raise it again.
 void LimitResolutionForIntegratedGpu() {
-    if (!GraphicsInfo::Integrated() || DisplaySettings::LinesForScale(g_resolutionScale) <= 1080.5f) {
+    if (!GraphicsInfo::RequiresResolutionLimit() || DisplaySettings::LinesForScale(g_resolutionScale) <= 1080.5f) {
         return;
     }
     g_resolutionScale = 2.25f;
