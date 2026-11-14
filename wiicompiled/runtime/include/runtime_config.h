@@ -44,6 +44,7 @@ struct RuntimeUserConfig {
     std::optional<float> resolutionMultiplier;
     std::optional<std::string> graphicsApi;
     std::optional<std::string> displayMode;
+    std::optional<std::string> displayName;
     std::optional<uint32_t> frameInterpolationFps;
     std::optional<bool> metalFxSpatialUpscaling;
     std::optional<bool> skipUnreadyPipelines;
@@ -578,6 +579,7 @@ inline RuntimeUserConfig ParseConfigDocument(const toml::value& document) {
                       << "\", using the automatic backend" << std::endl;
         }
     }
+    config.displayName = FindConfigValue<std::string>(document, "video", "display");
     if (auto value = FindConfigValue<std::string>(document, "video", "display_mode");
         value && IsSupportedDisplayMode(*value)) {
         config.displayMode = *value;
@@ -827,6 +829,11 @@ inline bool SetFrameInterpolationFps(uint32_t value) {
 inline bool SetMetalFxSpatialUpscaling(bool value) {
     Mutable().metalFxSpatialUpscaling = value;
     return WriteSetting("video", "metalfx_spatial_upscaling", value ? "true" : "false");
+}
+
+inline bool SetDisplayName(std::string value) {
+    Mutable().displayName = value;
+    return WriteSetting("video", "display", FormatString(value));
 }
 
 inline bool SetDisplayMode(std::string value) {
@@ -1193,6 +1200,10 @@ inline uint32_t DisabledPostProcessingPaths(uint32_t fallback = 0) {
 
 inline std::string GraphicsApi(std::string fallback = "auto") {
     return Get().graphicsApi.value_or(std::move(fallback));
+}
+
+inline std::string DisplayName() {
+    return Get().displayName.value_or("");
 }
 
 inline std::string DisplayMode(std::string fallback = "borderless") {

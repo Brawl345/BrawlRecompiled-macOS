@@ -135,6 +135,7 @@ typedef struct {
   const char* pipelineCachePath;
 
   AuroraGpuCompat gpuCompat;
+  const char* preferredDisplayName;
 } AuroraConfig;
 
 typedef enum {
@@ -191,6 +192,8 @@ void aurora_set_pause_on_focus_lost(bool value);
 void aurora_set_background_input(bool value);
 void aurora_set_display_mode(AuroraDisplayMode mode);
 AuroraDisplayMode aurora_get_display_mode();
+bool aurora_set_display(uint32_t displayId);
+uint32_t aurora_get_display();
 
 typedef enum {
   AURORA_METALFX_DISABLED,

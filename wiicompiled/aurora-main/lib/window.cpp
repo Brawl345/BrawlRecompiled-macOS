@@ -35,6 +35,7 @@ extern "C" void Android_UnlockActivityMutex(void);
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -352,6 +353,25 @@ void process_event(SDL_Event& event) {
       .sdl = event,
   });
 }
+
+SDL_DisplayID preferred_display() {
+  const char* preferred = g_config.preferredDisplayName;
+  if (preferred == nullptr) {
+    return 0;
+  }
+  int count = 0;
+  SDL_DisplayID* displays = SDL_GetDisplays(&count);
+  SDL_DisplayID result = SDL_GetPrimaryDisplay();
+  for (int i = 0; displays != nullptr && i < count; ++i) {
+    const char* name = SDL_GetDisplayName(displays[i]);
+    if (preferred[0] != '\0' && name != nullptr && std::string_view(name) == preferred) {
+      result = displays[i];
+      break;
+    }
+  }
+  SDL_free(displays);
+  return result;
+}
 } // namespace
 
 const AuroraEvent* poll_events() {
@@ -420,8 +440,16 @@ bool create_window(AuroraBackend backend) {
     height = 480;
   }
 
-  const Sint32 posX = g_config.hasWindowPosition ? g_config.windowPosX : SDL_WINDOWPOS_CENTERED;
-  const Sint32 posY = g_config.hasWindowPosition ? g_config.windowPosY : SDL_WINDOWPOS_CENTERED;
+  Sint32 posX = g_config.hasWindowPosition ? g_config.windowPosX : SDL_WINDOWPOS_CENTERED;
+  Sint32 posY = g_config.hasWindowPosition ? g_config.windowPosY : SDL_WINDOWPOS_CENTERED;
+  if (const SDL_DisplayID display = preferred_display(); display != 0) {
+    SDL_Rect bounds{};
+    const SDL_Point position{posX, posY};
+    if (!g_config.hasWindowPosition || !SDL_GetDisplayBounds(display, &bounds) ||
+        !SDL_PointInRect(&position, &bounds)) {
+      posX = posY = SDL_WINDOWPOS_CENTERED_DISPLAY(display);
+    }
+  }
 
   const auto props = SDL_CreateProperties();
   TRY(SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, g_config.appName), "Failed to set {}: {}",
@@ -493,6 +521,10 @@ bool initialize() {
   /* We don't want to initialize anything input related here, otherwise the add events will get lost to the void */
   TRY(SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight"), "Error setting {}: {}", SDL_HINT_ORIENTATIONS,
       SDL_GetError());
+#if defined(__APPLE__)
+  // Native fullscreen Spaces prevent moving the window between displays.
+  TRY(SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0"), "Error setting fullscreen Spaces hint: {}", SDL_GetError());
+#endif
   TRY(SDL_InitSubSystem(SDL_INIT_EVENTS | SDL_INIT_VIDEO), "Error initializing SDL: {}", SDL_GetError());
 
 #if !defined(_WIN32) && !defined(__APPLE__)
@@ -749,6 +781,40 @@ void set_display_mode(AuroraDisplayMode mode) {
 }
 
 AuroraDisplayMode get_display_mode() { return g_displayMode.load(std::memory_order_acquire); }
+
+uint32_t get_display() { return g_window != nullptr ? SDL_GetDisplayForWindow(g_window) : 0; }
+
+bool set_display(uint32_t displayId) {
+  if (g_window == nullptr) {
+    return false;
+  }
+  const SDL_DisplayID target = displayId != 0 ? displayId : SDL_GetPrimaryDisplay();
+  if (target == 0) {
+    return false;
+  }
+  if (target == get_display()) {
+    return true;
+  }
+  const AuroraDisplayMode mode = get_display_mode();
+  if (mode == AURORA_DISPLAY_MODE_EXCLUSIVE) {
+    set_display_mode(AURORA_DISPLAY_MODE_WINDOWED);
+  }
+  if (mode != AURORA_DISPLAY_MODE_BORDERLESS) {
+    SDL_RestoreWindow(g_window);
+  }
+  SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED_DISPLAY(target), SDL_WINDOWPOS_CENTERED_DISPLAY(target));
+  SDL_SyncWindow(g_window);
+  if (mode == AURORA_DISPLAY_MODE_EXCLUSIVE) {
+    set_display_mode(mode);
+  }
+  if (get_display() != target) {
+    Log.warn("Failed to move window to display {}: {}", SDL_GetDisplayName(target), SDL_GetError());
+    return false;
+  }
+  g_nativeResizePending.store(true, std::memory_order_release);
+  push_custom_event(CustomEvent::FutureResize);
+  return true;
+}
 
 void set_window_size(uint32_t width, uint32_t height) {
   TRY_WARN(SDL_RestoreWindow(g_window), "Failed to un-maximize window: {}", SDL_GetError());

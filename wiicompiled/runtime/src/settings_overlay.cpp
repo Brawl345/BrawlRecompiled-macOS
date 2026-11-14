@@ -43,6 +43,7 @@ extern "C" uint8_t* aurora_load_png_rgba(const char* path, uint32_t* width, uint
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_timer.h>
+#include <SDL3/SDL_video.h>
 
 #include <array>
 #include <functional>
@@ -62,6 +63,7 @@ extern "C" uint8_t* aurora_load_png_rgba(const char* path, uint32_t* width, uint
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -1182,6 +1184,42 @@ void DrawLanPlaySettings() {
     }
 }
 
+struct DisplayOption {
+    SDL_DisplayID id;
+    std::string name;
+};
+
+// Entry 0 is the default display, saved as an empty name.
+std::vector<DisplayOption> DisplayOptions() {
+    std::vector<DisplayOption> options{{0, "Default display"}};
+    int count = 0;
+    SDL_DisplayID* displays = SDL_GetDisplays(&count);
+    for (int i = 0; displays != nullptr && i < count; ++i) {
+        if (const char* name = SDL_GetDisplayName(displays[i])) options.push_back({displays[i], name});
+    }
+    SDL_free(displays);
+    return options;
+}
+
+int SelectedDisplay(const std::vector<DisplayOption>& options) {
+    const std::string saved = RuntimeConfigFile::DisplayName();
+    for (size_t i = 1; i < options.size(); ++i) {
+        if (options[i].name == saved) return static_cast<int>(i);
+    }
+    return 0;
+}
+
+std::string ActiveDisplayName() {
+    const char* name = SDL_GetDisplayName(aurora_get_display());
+    return name != nullptr ? name : "Default display";
+}
+
+bool SelectDisplay(const DisplayOption& option) {
+    if (!aurora_set_display(option.id)) return false;
+    RuntimeConfigFile::SetDisplayName(option.id != 0 ? option.name : "");
+    return true;
+}
+
 void DrawGraphicsSettings() {
     g_displayMode = static_cast<int>(aurora_get_display_mode());
     // NSMBW: the aspect (original 4:3, 16:9, fill) lives in the Aspect menu (DisplaySettings).
@@ -1221,6 +1259,19 @@ void DrawGraphicsSettings() {
         } else {
             g_displayMode = static_cast<int>(activeMode);
         }
+    }
+    if (ImGui::BeginCombo("Display", ActiveDisplayName().c_str())) {
+        const auto options = DisplayOptions();
+        const int selected = SelectedDisplay(options);
+        for (size_t i = 0; i < options.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::Selectable(options[i].name.c_str(), static_cast<int>(i) == selected) && !SelectDisplay(options[i])) {
+                g_notice = "Could not move the game to that display.";
+                g_noticeFrames = 60 * 8;
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
     }
     if (g_displayMode == AURORA_DISPLAY_MODE_EXCLUSIVE) {
         ImGui::TextDisabled(

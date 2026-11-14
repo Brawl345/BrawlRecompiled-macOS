@@ -1530,6 +1530,8 @@ int RuntimeMain(int argc, char** argv) {
         auroraConfig.windowHeight = RuntimeConfigFile::WindowHeight(auroraConfig.windowHeight);
         auroraConfig.hasWindowPosition = RuntimeConfigFile::WindowPosition(
             auroraConfig.windowPosX, auroraConfig.windowPosY);
+        const std::string displayName = RuntimeConfigFile::DisplayName();
+        auroraConfig.preferredDisplayName = RuntimeConfigFile::Get().displayName ? displayName.c_str() : nullptr;
         auroraConfig.allowJoystickBackgroundEvents = true;
         auroraConfig.disableCopyFilter = RuntimeConfigFile::DisableCopyFilter(true);
         // Dolphin-style custom textures. Aurora indexes <userPath>/texture_replacements

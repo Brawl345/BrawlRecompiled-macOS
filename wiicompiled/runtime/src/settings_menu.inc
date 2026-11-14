@@ -51,7 +51,13 @@ void OpenFolder(const std::filesystem::path& folder) {
 void GraphicsRows(std::vector<MenuRow>& rows) {
     static constexpr const char* kModes[] = {"WINDOW", "BORDERLESS", "FULLSCREEN"};
     g_displayMode = static_cast<int>(aurora_get_display_mode());
-    rows.push_back({"Display", kModes[std::clamp(g_displayMode, 0, 2)], "F11 also switches between a window and fullscreen.",
+    const auto displays = DisplayOptions();
+    rows.push_back({"Display", ActiveDisplayName(), "Saved for the next start. Uses the default display when it is missing.",
+                    [displays, selected = SelectedDisplay(displays)](int step) {
+                        const auto& option = displays[static_cast<size_t>(Cycle(selected, step, static_cast<int>(displays.size())))];
+                        if (!SelectDisplay(option)) Flash("Could not move the game to that display.");
+                    }});
+    rows.push_back({"Display mode", kModes[std::clamp(g_displayMode, 0, 2)], "F11 also switches between a window and fullscreen.",
                     [](int step) {
                         aurora_set_display_mode(static_cast<AuroraDisplayMode>(Cycle(g_displayMode, step, 3)));
                         g_displayMode = static_cast<int>(aurora_get_display_mode());
