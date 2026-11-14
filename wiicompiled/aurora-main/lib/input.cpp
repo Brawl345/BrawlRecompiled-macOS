@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -338,6 +339,39 @@ void apply_port_preferences() noexcept {
   }
 }
 
+bool is_mfi(SDL_Gamepad* gamepad) {
+  return SDL_GetGamepadGUIDForID(SDL_GetGamepadID(gamepad)).data[14] == 'm';
+}
+
+bool name_ends_with(const char* name, const char* suffix) {
+  if (name == nullptr || suffix == nullptr) {
+    return false;
+  }
+  const std::string_view whole{name};
+  const std::string_view end{suffix};
+  return !end.empty() && whole.size() >= end.size() && whole.substr(whole.size() - end.size()) == end;
+}
+
+// SDL's GameController backend skips pads HIDAPI already drives only for some types; the NSO N64, SNES and Genesis
+// pads show up a second time under their short name ("N64 Controller" beside "Nintendo N64 Controller").
+bool mfi_duplicates(SDL_Gamepad* mfi, SDL_Gamepad* other) {
+  return mfi != other && is_mfi(mfi) && !is_mfi(other) && name_ends_with(SDL_GetGamepadName(other), SDL_GetGamepadName(mfi));
+}
+
+// SDL gives every new pad a free player slot, and GameController lights that slot's LED on the physical pad.
+void close_mfi_duplicate(SDL_Gamepad* mfi) {
+  SDL_SetGamepadPlayerIndex(mfi, -1);
+  SDL_CloseGamepad(mfi);
+}
+
+void refresh_player_led(SDL_Gamepad* gamepad) {
+  const int port = SDL_GetGamepadPlayerIndex(gamepad);
+  if (port >= 0) {
+    SDL_SetGamepadPlayerIndex(gamepad, -1);
+    SDL_SetGamepadPlayerIndex(gamepad, port);
+  }
+}
+
 } // namespace
 
 GameController* get_controller_for_player(uint32_t player) noexcept {
@@ -376,6 +410,26 @@ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
       SDL_CloseGamepad(ctrl);
       return -1;
     }
+    for (const auto& [instance, other] : g_GameControllers) {
+      if (mfi_duplicates(ctrl, other.m_controller)) {
+        Log.info("Ignoring '{}': the same pad as '{}'", SDL_GetGamepadName(ctrl), SDL_GetGamepadName(other.m_controller));
+        close_mfi_duplicate(ctrl);
+        refresh_player_led(other.m_controller);
+        return -1;
+      }
+    }
+    bool droppedDuplicate = false;
+    for (auto it = g_GameControllers.begin(); it != g_GameControllers.end();) {
+      if (mfi_duplicates(it->second.m_controller, ctrl)) {
+        droppedDuplicate = true;
+        Log.info("Dropping '{}': the same pad as '{}'", SDL_GetGamepadName(it->second.m_controller),
+                 SDL_GetGamepadName(ctrl));
+        close_mfi_duplicate(it->second.m_controller);
+        g_GameControllers.erase(it++);
+      } else {
+        ++it;
+      }
+    }
     controller.m_isGameCube = controller.m_vid == 0x057E && controller.m_pid == 0x0337;
     const char* serial = SDL_GetGamepadSerial(ctrl);
     controller.m_gameCubeUseOrdinaryStop = controller.m_isGameCube && serial && "GCP+"sv == serial;
@@ -389,6 +443,9 @@ SDL_JoystickID add_controller(SDL_JoystickID which) noexcept {
     SDL_JoystickID instance = SDL_GetJoystickID(SDL_GetGamepadJoystick(ctrl));
     g_GameControllers[instance] = controller;
     apply_port_preferences();
+    if (droppedDuplicate) {
+      refresh_player_led(ctrl);
+    }
 #if defined(SDL_PLATFORM_MACOS)
     // First-use convenience only: never override a saved assignment or None.
     if (g_portPreferences[0].state == PortPreferenceState::Unset) {
