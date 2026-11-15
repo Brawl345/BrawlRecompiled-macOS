@@ -1474,12 +1474,11 @@ void DrawShaderCompilationStatus() {
     ImGui::PopStyleVar();
 }
 
-std::string StartButtonName();
 std::string g_busyLabel;  // SetBusyProgress
 float g_busyFraction = 0.0f;
 
 void DrawStartupScreen() {
-    if (!StartupScreenVisible()) {
+    if (!StartupScreenVisible() || (!g_bootShaderNotice && g_busyLabel.empty())) {
         return;
     }
 
@@ -1643,18 +1642,6 @@ void DrawStartupScreen() {
                 const auto u = GameLayout::Utf16(shaderLine);
                 GameLayout::DrawText(list, view, small, u, 0.0f, by - 26.0f + bob, Fit(small, u, 15.0f), 0xD6D9E4FFu,
                                      0xD6D9E4FFu, 1.0f, 1, 1);
-            } else {
-                // Press start: A on a GameCube controller (any gamepad's bottom face button), Enter on the keyboard
-                // pad, A or 2 on a Wii Remote (frame_input.cpp lifts the cover).
-                const float pop = 1.0f + 0.06f * std::sin(t * 5.0f), py = cardY - 82.0f + bob;
-                const auto press = GameLayout::Utf16("Press " + StartButtonName() + " to start!");
-                const float fs = Fit(*pmFont, press, 26.0f) * pop;
-                for (int j = 0; j < 12; ++j) {
-                    const float a = j * 0.5236f;
-                    GameLayout::DrawText(list, view, *pmFont, press, std::cos(a) * 2.5f, py + std::sin(a) * 2.5f, fs,
-                                         0x0B0D16FFu, 0x0B0D16FFu, 1.0f, 1, 1);
-                }
-                GameLayout::DrawText(list, view, *pmFont, press, 0.0f, py, fs, 0xFFFFFFFFu, 0xFF8C28FFu, 1.0f, 1, 1);
             }
             // The Smash Ball in the top-left corner, turning slowly.
             {
@@ -1714,52 +1701,8 @@ void UpdateBootShaderState() {
     g_bootShaderNotice |= queued > kBootShaderNoticeThreshold;
     if (queued == 0 || now - g_bootShaderWaitStart > kBootShaderWaitLimit) {
         g_bootShadersReady.store(true, std::memory_order_release);
-        // The title card then waits for a press (UpdateStartupPress); scripted test runs go straight on.
-        if (std::getenv("NSMBW_INPUT_SCRIPT") != nullptr || std::filesystem::exists("input_script.txt")) {
-            NotifyStrapInputAccepted();
-        }
+        NotifyStrapInputAccepted();
     }
-}
-
-// The button that starts, as printed on the first connected gamepad (its bottom face button: A on Xbox and GameCube
-// style pads, B on Nintendo's, Cross on PlayStation's), or Enter without one.
-std::string StartButtonName() {
-    int count = 0;
-    SDL_JoystickID* ids = SDL_GetGamepads(&count);
-    std::string name = "Enter";
-    if (ids != nullptr && count > 0) {
-        SDL_Gamepad* pad = SDL_GetGamepadFromID(ids[0]);
-        switch (pad != nullptr ? SDL_GetGamepadButtonLabel(pad, SDL_GAMEPAD_BUTTON_SOUTH) : SDL_GAMEPAD_BUTTON_LABEL_A) {
-        case SDL_GAMEPAD_BUTTON_LABEL_B: name = "B"; break;
-        case SDL_GAMEPAD_BUTTON_LABEL_CROSS: name = "Cross"; break;
-        default: name = "A"; break;
-        }
-    }
-    SDL_free(ids);
-    return name;
-}
-
-// The title card lifts on the start button (any gamepad's bottom face button or Start), Enter or Space, or a click,
-// once it has been up for a moment so the credits are seen. Wii Remotes lift it from frame_input.cpp.
-void UpdateStartupPress() {
-    static int shownFrames = 0;
-    if (!g_bootShadersReady.load(std::memory_order_acquire) || g_strapInputAccepted.load(std::memory_order_acquire)) return;
-    if (++shownFrames < 90) return;
-    bool pressed = false;
-    int count = 0;
-    SDL_JoystickID* ids = SDL_GetGamepads(&count);
-    for (int i = 0; ids != nullptr && i < count; ++i) {
-        if (SDL_Gamepad* pad = SDL_GetGamepadFromID(ids[i])) {
-            pressed = pressed || SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH) || SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_START);
-        }
-    }
-    SDL_free(ids);
-    // Keys and clicks count only while the game window has them (typing or clicking in another program does not).
-    const bool* keys = SDL_GetKeyboardState(nullptr);
-    pressed = pressed || (SDL_GetKeyboardFocus() != nullptr && keys != nullptr &&
-                          (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_KP_ENTER]));
-    pressed = pressed || (SDL_GetMouseFocus() != nullptr && (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) != 0);
-    if (pressed) NotifyStrapInputAccepted();
 }
 
 void DrawExitPrompt() {
@@ -2346,7 +2289,6 @@ void Draw() noexcept {
     PersistDisplayModeIfChanged();
     UpdateCursorAutoHide();
     UpdateBootShaderState();
-    UpdateStartupPress();
     if (!StartupScreenVisible()) {
         DrawShaderCompilationStatus();
     }

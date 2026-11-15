@@ -1,4 +1,3 @@
-#include "settings_overlay.h"
 #include "netplay_ui.h"
 #include "frame_input.h"
 #include "hle_stubs.h"
@@ -284,11 +283,6 @@ bool ReadSample(uint32_t chan, WiiRemoteInput::KpadSample& sample) {
         return false;
     }
     NetplayUi::FilterGameInput(chan, sample);
-    // The startup cover (settings_overlay) waits for A or 2; the press itself never reaches the game.
-    constexpr uint32_t kWpadA = 0x0800u, kWpadTwo = 0x0100u;
-    if (settings_overlay::StartupScreenVisible() && (sample.hold & (kWpadA | kWpadTwo)) != 0) {
-        settings_overlay::NotifyStrapInputAccepted();
-    }
     if (InputBindings::InputBlocked()) {
         sample.hold = 0;
         sample.clHold = 0;
