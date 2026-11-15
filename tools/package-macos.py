@@ -101,6 +101,9 @@ def main(archive: bool) -> None:
         CFBundleVersion=version,
         CFBundleIconFile="Brawl.icns",
         NSQuitAlwaysKeepsWindows=False,
+        LSApplicationCategoryType="public.app-category.action-games",
+        LSSupportsGameMode=True,
+        GCSupportsGameMode=True,
     )
     info.write_bytes(plistlib.dumps(metadata))
 

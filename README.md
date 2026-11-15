@@ -144,7 +144,8 @@ next to `Config.toml`, the saves and the caches. To use an already extracted dis
 about 32 GB of RAM); `--skip-translate` recompiles only the runtime. Each step logs to `build-logs/`.
 
 `package-macos.py --archive` also writes `dist/BrawlRecompiled-<version>-macos-arm64.zip`. The app is ad-hoc
-signed and not notarized, so macOS asks for confirmation on first launch.
+signed and not notarized, so macOS asks for confirmation on first launch. In fullscreen macOS turns on Game Mode
+for it.
 
 | Folder | What it is |
 |---|---|
