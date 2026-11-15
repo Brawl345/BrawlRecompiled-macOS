@@ -713,6 +713,11 @@ std::vector<std::u16string> WrapText(const Font& font, const std::u16string& tex
     return lines;
 }
 
+bool HasGlyphs(const Font& font, const std::u16string& text) {
+    return std::all_of(text.begin(), text.end(),
+                       [&](char16_t c) { return c == u'\n' || font.map.count(static_cast<uint16_t>(c)) != 0; });
+}
+
 float MeasureText(const Font& font, const std::u16string& text, float fontSize) {
     if (!font.ok || font.width == 0) {
         return 0;

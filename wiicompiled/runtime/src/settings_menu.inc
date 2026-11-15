@@ -465,12 +465,13 @@ void MenuRowDraw(const MK::Canvas& c, const MenuRow& row, float y, bool focused)
     const float vx = 330;
     std::string value = row.value;  // Brawl's title font has no parentheses
     value.erase(std::remove_if(value.begin(), value.end(), [](char ch) { return ch == '(' || ch == ')'; }), value.end());
+    const GameLayout::Font& font = GameLayout::HasGlyphs(*MK::TitleFont(), GameLayout::Utf16(value)) ? *MK::TitleFont() : *MK::MenuFont();
     if (row.bar >= 0) {
         c.list->AddRectFilled(c.P(vx - 100, y + 5), c.P(vx + 60, y - 5), MK::Col(0x0B0D16FFu));
         c.list->AddRectFilled(c.P(vx - 100, y + 5), c.P(vx - 100 + 160.0f * row.bar / 100.0f, y - 5), MK::Col(MK::kOrange));
-        MK::Text(c, *MK::TitleFont(), value, vx + 98, y, 17, MK::kSnow, 0xFFE7B0FFu, 1, 70, true);
+        MK::Text(c, font, value, vx + 98, y, 17, MK::kSnow, 0xFFE7B0FFu, 1, 70, true);
     } else if (!value.empty()) {
-        MK::Text(c, *MK::TitleFont(), value, vx, y, 18, row.value == "ON" ? 0xB8FFB0FFu : MK::kSnow,
+        MK::Text(c, font, value, vx, y, 18, row.value == "ON" ? 0xB8FFB0FFu : MK::kSnow,
                  row.value == "OFF" ? MK::kDim : 0xFFE7B0FFu, 1, 230, true);
     }
     if (focused && row.enabled && row.change && row.bar >= 0) {

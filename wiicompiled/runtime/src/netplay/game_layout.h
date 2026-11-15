@@ -93,6 +93,7 @@ private:
 // "mj2d01_marioFont_64_IA4.brfnt", "mj2d00_PictureFont_32_RGBA8.brfnt").
 std::shared_ptr<Font> LoadFont(const std::string& name);
 bool FontReady(const Font* font);
+bool HasGlyphs(const Font& font, const std::u16string& text);
 float MeasureText(const Font& font, const std::u16string& text, float fontSize);
 // Breaks `text` at spaces into lines no wider than `maxWidth` layout units.
 std::vector<std::u16string> WrapText(const Font& font, const std::u16string& text, float fontSize, float maxWidth);
