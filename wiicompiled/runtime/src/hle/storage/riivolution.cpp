@@ -205,7 +205,8 @@ std::optional<RiivoXmlSet> RiivoFindXmls(const fs::path& overlayRoot) {
             if (ec) {
                 break;
             }
-            if (entry.is_regular_file(ec) && entry.path().extension() == ".xml") {
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".xml" &&
+                entry.path().filename().native().front() != '.') {
                 xmlFiles.push_back(entry.path());
             }
         }

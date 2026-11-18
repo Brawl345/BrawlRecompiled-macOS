@@ -315,6 +315,11 @@ Manifest ScanFolder(const fs::path& folder) {
          !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
         const fs::path relative = it->path().lexically_relative(folder);
         std::error_code entryEc;
+        const auto& name = it->path().filename().native();
+        if (!name.empty() && name.front() == '.') {
+            if (it->is_directory(entryEc)) it.disable_recursion_pending();
+            continue;
+        }
         if (it->is_directory(entryEc)) {
             manifest[Utf8(relative)] = {kDirectory, 0};
         } else if (it->is_regular_file(entryEc)) {

@@ -972,7 +972,7 @@ static int32_t HandleIsfsReadDir(uint32_t numIn, uint32_t numOut, uint32_t vecto
     std::error_code ec;
     for (const auto& entry : std::filesystem::directory_iterator(hostPath, ec)) {
         std::string name = HostPathText(entry.path().filename());
-        if (name.empty() || name.size() > kMaxNandNameLength) {
+        if (name.empty() || name.size() > kMaxNandNameLength || name.front() == '.') {
             continue;
         }
         names.push_back(std::move(name));

@@ -576,6 +576,12 @@ static bool DvdEntryExists(const std::string& dvdPath) {
 // Walk `root` and hand every entry to `visit`. Uses the error_code iterator forms so an
 // unreadable entry doesn't abort the rest of the overlay. `announceErrors` keeps the
 // disc-index scan noisy and the by-name mapping quiet, matching each caller's old behavior.
+static bool IsHiddenEntry(const fs::directory_entry& entry) {
+    const auto& name = entry.path().filename().native();
+    return !name.empty() && name.front() == '.';
+}
+
+// Hidden entries (Finder's .DS_Store) stay out: mods such as Project+ point at FST name strings by fixed address.
 template <typename Visit>
 static void WalkDirectory(const fs::path& root, bool recursive, bool announceErrors, Visit&& visit) {
     std::error_code ec;
@@ -586,7 +592,9 @@ static void WalkDirectory(const fs::path& root, bool recursive, bool announceErr
             if (ec) {
                 break;
             }
-            visit(entry);
+            if (!IsHiddenEntry(entry)) {
+                visit(entry);
+            }
         }
         return;
     }
@@ -603,6 +611,17 @@ static void WalkDirectory(const fs::path& root, bool recursive, bool announceErr
     const fs::recursive_directory_iterator end;
     while (it != end) {
         const fs::directory_entry entry = *it;
+        if (IsHiddenEntry(entry)) {
+            std::error_code typeEc;
+            if (it->is_directory(typeEc)) {
+                it.disable_recursion_pending();
+            }
+            it.increment(ec);
+            if (ec) {
+                return;
+            }
+            continue;
+        }
 
         it.increment(ec);
         if (ec) {
